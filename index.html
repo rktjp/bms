@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>来店きっかけアンケート</title>
+  <!-- LIFF SDK -->
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/versions/2.24.0/sdk.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      width: 100%; min-height: 100%; min-height: 100dvh;
+      font-family: 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', 'Yu Gothic', sans-serif;
+      background: #FDF8F0; color: #3E2B1C;
+      user-select: none; -webkit-user-select: none;
+    }
+    .screen { display: none; flex-direction: column; width: 100%; min-height: 100vh; min-height: 100dvh; padding: 20px 24px; }
+    .screen.active { display: flex; }
+
+    /* ヘッダー */
+    .survey-header { text-align: center; padding: 10px 0 6px; }
+    .survey-header .store-name { font-size: 13px; color: #8B7355; letter-spacing: 2px; margin-bottom: 4px; }
+    .survey-header h1 {
+      font-size: 22px; font-weight: 700; color: #3E2B1C;
+      position: relative; display: inline-block;
+    }
+    .survey-header h1::after {
+      content: ''; display: block; width: 100%; height: 4px;
+      background: linear-gradient(90deg, transparent, #C4944A, transparent);
+      margin-top: 6px; border-radius: 2px;
+    }
+    .survey-subtitle { font-size: 13px; color: #8B7355; margin-top: 6px; }
+
+    /* ステップ */
+    .step-indicator { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 0 4px; }
+    .step-dot { width: 10px; height: 10px; border-radius: 50%; background: #E8DCCF; transition: all 0.3s; }
+    .step-dot.active { background: #C4944A; width: 28px; border-radius: 5px; }
+    .step-label { font-size: 12px; color: #8B7355; margin-left: 8px; }
+
+    /* LINE接続バー */
+    .line-bar {
+      background: #06C755; color: #FFF; padding: 8px 16px; border-radius: 10px;
+      font-size: 13px; text-align: center; margin-bottom: 8px;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .line-bar.error { background: #E74C3C; }
+    .line-bar .line-name { font-weight: 700; }
+
+    /* グリッド */
+    .survey-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(4, 1fr);
+      gap: 10px; flex: 1; padding: 10px 0;
+    }
+    .survey-item {
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+      background: #FFF; border: 2px solid #E8DCCF; border-radius: 14px; padding: 10px 6px;
+      cursor: pointer; transition: all 0.2s ease; position: relative; overflow: hidden;
+    }
+    .survey-item::before {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(135deg, #C4944A, #DAA520);
+      opacity: 0; transition: opacity 0.25s ease; border-radius: 12px;
+    }
+    .survey-item.selected { border-color: #C4944A; transform: scale(0.97); box-shadow: 0 0 0 3px rgba(196,148,74,0.3); }
+    .survey-item.selected::before { opacity: 1; }
+    .survey-item .icon {
+      width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;
+      position: relative; z-index: 1; font-size: 30px; transition: filter 0.25s ease;
+    }
+    .survey-item.selected .icon { filter: brightness(0) invert(1); }
+    .survey-item .label {
+      font-size: 14px; font-weight: 600; text-align: center;
+      position: relative; z-index: 1; transition: color 0.25s ease; line-height: 1.3;
+    }
+    .survey-item.selected .label { color: #FFF; }
+    .survey-item .checkmark {
+      position: absolute; top: 6px; right: 6px; width: 22px; height: 22px;
+      border-radius: 50%; background: #FFF; display: flex; align-items: center; justify-content: center;
+      opacity: 0; transform: scale(0.5); transition: all 0.2s ease; z-index: 2;
+    }
+    .survey-item.selected .checkmark { opacity: 1; transform: scale(1); }
+    .checkmark svg { width: 12px; height: 12px; }
+
+    /* ページ2 フォーム */
+    .form-body { flex: 1; overflow-y: auto; padding: 8px 0; -webkit-overflow-scrolling: touch; }
+    .form-section { margin-bottom: 20px; }
+    .form-section-title {
+      font-size: 15px; font-weight: 700; color: #3E2B1C; margin-bottom: 10px;
+      padding-left: 10px; border-left: 4px solid #C4944A; display: flex; align-items: center; gap: 6px;
+    }
+    .required-badge { font-size: 11px; background: #C0392B; color: #FFF; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+    .optional-badge { font-size: 11px; background: #8B7355; color: #FFF; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+
+    .choice-group { display: flex; gap: 10px; flex-wrap: wrap; }
+    .choice-card {
+      flex: 1; min-width: 80px; padding: 14px 8px; background: #FFF; border: 2px solid #E8DCCF;
+      border-radius: 12px; text-align: center; cursor: pointer; transition: all 0.2s ease;
+      font-size: 16px; font-weight: 600;
+    }
+    .choice-card .choice-icon { font-size: 28px; margin-bottom: 4px; }
+    .choice-card.selected {
+      border-color: #C4944A; background: linear-gradient(135deg, #C4944A, #DAA520); color: #FFF;
+      transform: scale(0.97); box-shadow: 0 0 0 3px rgba(196,148,74,0.3);
+    }
+
+    .age-group { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .age-card {
+      padding: 12px 4px; background: #FFF; border: 2px solid #E8DCCF; border-radius: 10px;
+      text-align: center; cursor: pointer; transition: all 0.2s ease; font-size: 15px; font-weight: 600;
+    }
+    .age-card.selected {
+      border-color: #C4944A; background: linear-gradient(135deg, #C4944A, #DAA520); color: #FFF;
+      transform: scale(0.97); box-shadow: 0 0 0 3px rgba(196,148,74,0.3);
+    }
+
+    .phone-input {
+      width: 100%; padding: 14px 16px; font-size: 20px; border: 2px solid #E8DCCF; border-radius: 12px;
+      background: #FFF; color: #3E2B1C; font-family: inherit; letter-spacing: 2px; outline: none; transition: border-color 0.2s;
+    }
+    .phone-input:focus { border-color: #C4944A; box-shadow: 0 0 0 3px rgba(196,148,74,0.15); }
+    .phone-input::placeholder { color: #CCBBAA; letter-spacing: 1px; font-size: 16px; }
+    .phone-note { font-size: 12px; color: #8B7355; margin-top: 6px; }
+
+    .validation-error { display: none; color: #C0392B; font-size: 13px; font-weight: 600; margin-top: 4px; padding-left: 14px; }
+    .validation-error.show { display: block; }
+
+    /* ボタン */
+    .btn-area { padding: 12px 0 24px; text-align: center; display: flex; gap: 12px; justify-content: center; }
+    .btn-primary {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 16px 40px; background: linear-gradient(135deg, #8B4513, #A0522D); color: #FFF;
+      font-size: 18px; font-weight: 700; border: none; border-radius: 50px; cursor: pointer;
+      letter-spacing: 2px; transition: all 0.2s ease; box-shadow: 0 4px 15px rgba(139,69,19,0.3); font-family: inherit;
+    }
+    .btn-primary:active { transform: scale(0.97); }
+    .btn-primary:disabled { background: #CCBBAA; cursor: not-allowed; box-shadow: none; }
+    .btn-primary.line-green { background: linear-gradient(135deg, #06C755, #05B64C); box-shadow: 0 4px 15px rgba(6,199,85,0.3); }
+    .btn-secondary {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 16px 32px; background: #FFF; color: #8B7355; font-size: 16px; font-weight: 600;
+      border: 2px solid #E8DCCF; border-radius: 50px; cursor: pointer; transition: all 0.2s ease; font-family: inherit;
+    }
+    .btn-secondary:active { transform: scale(0.97); background: #FDF8F0; }
+
+    /* 完了画面 */
+    #thankYouScreen { align-items: center; justify-content: center; text-align: center; gap: 20px; }
+    .thank-icon { font-size: 64px; animation: popIn 0.5s ease; }
+    @keyframes popIn { 0%{transform:scale(0);opacity:0} 60%{transform:scale(1.15)} 100%{transform:scale(1);opacity:1} }
+    .thank-title { font-size: 26px; font-weight: 700; color: #3E2B1C; }
+    .selected-summary { background: #FFF; border: 2px solid #E8DCCF; border-radius: 16px; padding: 16px 20px; width: 90%; max-width: 550px; }
+    .selected-summary h3 { font-size: 13px; color: #8B7355; margin-bottom: 8px; letter-spacing: 1px; }
+    .selected-tags { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+    .selected-tag { background: linear-gradient(135deg, #C4944A, #DAA520); color: #FFF; padding: 4px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; }
+    .summary-info { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 10px; font-size: 14px; color: #5C3A1E; }
+    .summary-info span { font-weight: 600; }
+    .thank-message { font-size: 16px; color: #8B7355; line-height: 1.6; }
+    .close-btn-area { padding: 8px 0 24px; }
+
+    /* 送信中 */
+    .loading-overlay { display:none; position:fixed; inset:0; background:rgba(253,248,240,0.92); z-index:100; align-items:center; justify-content:center; flex-direction:column; gap:16px; }
+    .loading-overlay.active { display: flex; }
+    .spinner { width:48px; height:48px; border:4px solid #E8DCCF; border-top-color:#C4944A; border-radius:50%; animation:spin 0.8s linear infinite; }
+    @keyframes spin { to{transform:rotate(360deg)} }
+    .loading-text { font-size: 16px; color: #8B7355; }
+
+    /* 初期化画面 */
+    #initScreen { align-items: center; justify-content: center; text-align: center; gap: 16px; }
+  </style>
+</head>
+<body>
+
+  <!-- ===== 初期化中 ===== -->
+  <div id="initScreen" class="screen active">
+    <div class="spinner"></div>
+    <div class="loading-text">LINEに接続中...</div>
+  </div>
+
+  <!-- ===== ページ1: 来店きっかけ ===== -->
+  <div id="page1Screen" class="screen">
+    <div class="survey-header">
+      <div class="store-name" id="storeNameDisplay"></div>
+      <h1>当店へ来店のきっかけを教えてください</h1>
+      <div class="survey-subtitle">複数選択できます（タッチで選択・解除）</div>
+    </div>
+    <div class="line-bar" id="lineBar">
+      <span>LINE連携中：</span><span class="line-name" id="lineNameDisplay">---</span>
+    </div>
+    <div class="step-indicator">
+      <div class="step-dot active"></div><div class="step-dot"></div>
+      <span class="step-label">STEP 1 / 2</span>
+    </div>
+    <div class="survey-grid" id="surveyGrid"></div>
+    <div class="btn-area">
+      <button class="btn-primary" id="toPage2Btn" disabled onclick="goToPage2()">次へ →</button>
+    </div>
+  </div>
+
+  <!-- ===== ページ2: 製品・性別・年代・電話番号 ===== -->
+  <div id="page2Screen" class="screen">
+    <div class="survey-header">
+      <div class="store-name" id="storeNameDisplay2"></div>
+      <h1>アンケートにご協力ください</h1>
+    </div>
+    <div class="step-indicator">
+      <div class="step-dot"></div><div class="step-dot active"></div>
+      <span class="step-label">STEP 2 / 2</span>
+    </div>
+    <div class="form-body">
+      <div class="form-section">
+        <div class="form-section-title">🛍️ 購入した製品 <span class="required-badge">必須</span></div>
+        <div class="choice-group" id="productGroup">
+          <div class="choice-card" data-group="product" data-value="メガネ" onclick="selectChoice(this)"><div class="choice-icon">👓</div>メガネ</div>
+          <div class="choice-card" data-group="product" data-value="コンタクトレンズ" onclick="selectChoice(this)"><div class="choice-icon">👁️</div>コンタクトレンズ</div>
+          <div class="choice-card" data-group="product" data-value="その他" onclick="selectChoice(this)"><div class="choice-icon">📦</div>その他</div>
+        </div>
+        <div class="validation-error" id="productError">購入した製品を選択してください</div>
+      </div>
+      <div class="form-section">
+        <div class="form-section-title">👤 性別 <span class="required-badge">必須</span></div>
+        <div class="choice-group" id="genderGroup">
+          <div class="choice-card" data-group="gender" data-value="男性" onclick="selectChoice(this)"><div class="choice-icon">👨</div>男性</div>
+          <div class="choice-card" data-group="gender" data-value="女性" onclick="selectChoice(this)"><div class="choice-icon">👩</div>女性</div>
+          <div class="choice-card" data-group="gender" data-value="回答しない" onclick="selectChoice(this)"><div class="choice-icon">🙂</div>回答しない</div>
+        </div>
+        <div class="validation-error" id="genderError">性別を選択してください</div>
+      </div>
+      <div class="form-section">
+        <div class="form-section-title">📅 年代 <span class="required-badge">必須</span></div>
+        <div class="age-group" id="ageGroup">
+          <div class="age-card" data-group="age" data-value="10代未満" onclick="selectChoice(this)">10代未満</div>
+          <div class="age-card" data-group="age" data-value="10代" onclick="selectChoice(this)">10代</div>
+          <div class="age-card" data-group="age" data-value="20代" onclick="selectChoice(this)">20代</div>
+          <div class="age-card" data-group="age" data-value="30代" onclick="selectChoice(this)">30代</div>
+          <div class="age-card" data-group="age" data-value="40代" onclick="selectChoice(this)">40代</div>
+          <div class="age-card" data-group="age" data-value="50代" onclick="selectChoice(this)">50代</div>
+          <div class="age-card" data-group="age" data-value="60代" onclick="selectChoice(this)">60代</div>
+          <div class="age-card" data-group="age" data-value="70代以上" onclick="selectChoice(this)">70代以上</div>
+        </div>
+        <div class="validation-error" id="ageError">年代を選択してください</div>
+      </div>
+      <div class="form-section">
+        <div class="form-section-title">📱 携帯電話番号 <span class="optional-badge">任意</span></div>
+        <input type="tel" id="phoneInput" class="phone-input" placeholder="090-1234-5678" inputmode="tel" autocomplete="tel" maxlength="13">
+        <div class="phone-note">※ お得な情報のご案内に使用させていただく場合がございます</div>
+      </div>
+    </div>
+    <div class="btn-area">
+      <button class="btn-secondary" onclick="goBackToPage1()">← 戻る</button>
+      <button class="btn-primary" onclick="handleSubmit()">送信する ✓</button>
+    </div>
+  </div>
+
+  <!-- ===== 完了画面 ===== -->
+  <div id="thankYouScreen" class="screen">
+    <div class="thank-icon">🙏</div>
+    <div class="thank-title">ご協力いただき<br>ありがとうございました</div>
+    <div class="selected-summary">
+      <h3>ご回答内容</h3>
+      <div class="selected-tags" id="selectedTags"></div>
+      <div class="summary-info" id="summaryInfo"></div>
+    </div>
+    <div class="thank-message">アンケートは以上です。<br>ありがとうございました。</div>
+    <div class="close-btn-area">
+      <button class="btn-primary line-green" onclick="closeLiff()">閉じる</button>
+    </div>
+  </div>
+
+  <!-- ===== 送信中 ===== -->
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="spinner"></div>
+    <div class="loading-text">送信中...</div>
+  </div>
+
+  <script>
+    // ============================================================
+    // ★★★ 設定（要変更） ★★★
+    // ============================================================
+    const LIFF_ID = '2009531266-X3KnhCdB';  // LINE Developers で発行
+    const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbxN5TbumPC3xUz7Bnn8d-XV_AmgDA4XbPp95zp3CELtWccTcDtC5JKHCcSYaVDWA62ksQ/exec';  // GASのWebアプリURL
+
+    // ============================================================
+    // 店舗・項目定義
+    // ============================================================
+    const STORES = {
+      'omiya':'ベストメガネコンタクト大宮かどまち店','todakoen':'ベストメガネコンタクト戸田公園駅前店',
+      'musashiurawa':'ベストメガネコンタクト武蔵浦和駅前店','firsttower':'ベストメガネコンタクトファーストタワー店',
+      'higashiurawa':'ベストメガネコンタクト東浦和店','nerima':'ベストメガネコンタクト練馬駅西口店',
+      'jiyugaoka':'ベストメガネコンタクト自由が丘駅前店','shinjuku':'ベストメガネコンタクト新宿駅前本店',
+      'yurakucho':'ベストメガネコンタクト有楽町駅前店','soka':'ベストメガネコンタクト草加駅前店',
+      'higashiyamato':'ベストメガネコンタクト東大和店','yotsuya':'ベストメガネコンタクト四谷三丁目駅前店',
+      'otakanomori':'ベストメガネコンタクトおおたかの森駅前店','nagaoka':'ベストメガネコンタクト長岡寺島店',
+      'yanasegawa':'柳瀬川駅前コンタクト'
+    };
+    const SURVEY_ITEMS = [
+      '口コミを見て','家族・知人紹介','当店HP','Instagram','TikTok（広告）',
+      '店舗からのハガキ','デジタルサイネージ','ネット広告','看板','家が近いから','職場が近い','隣接眼科紹介','Facebook','渡瀬マキSNS','その他'
+    ];
+    const ICONS = {
+      '口コミを見て':'💬','家族・知人紹介':'👨‍👩‍👧','当店HP':'🖥️',
+      'Instagram':'<svg viewBox="0 0 48 48" width="30" height="30" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="ig" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" stop-color="#FFDC80"/><stop offset="25%" stop-color="#F77737"/><stop offset="50%" stop-color="#E1306C"/><stop offset="75%" stop-color="#C13584"/><stop offset="100%" stop-color="#405DE6"/></linearGradient></defs><rect x="4" y="4" width="40" height="40" rx="12" fill="url(#ig)"/><circle cx="24" cy="24" r="9" fill="none" stroke="#FFF" stroke-width="3"/><circle cx="35" cy="13" r="2.5" fill="#FFF"/></svg>',
+      'TikTok（広告）':'<svg viewBox="0 0 48 48" width="30" height="30" xmlns="http://www.w3.org/2000/svg"><rect width="48" height="48" rx="12" fill="#010101"/><path d="M33.5 11.5c-1.8-1.2-3-3.2-3.3-5.5h-5.7v22c0 2.8-2.3 5-5 5s-5-2.3-5-5 2.3-5 5-5c.5 0 1 .1 1.5.2v-5.9c-.5-.1-1-.1-1.5-.1-6 0-10.9 4.9-10.9 10.9s4.9 10.9 10.9 10.9 10.9-4.9 10.9-10.9v-9c2.2 1.6 4.9 2.5 7.8 2.5v-5.9c-1.8 0-3.5-.6-4.7-1.7v-2.5z" fill="#25F4EE"/><path d="M35 13c-1.8-1.2-3-3.2-3.3-5.5h-5.7v22c0 2.8-2.3 5-5 5s-5-2.3-5-5 2.3-5 5-5c.5 0 1 .1 1.5.2v-5.9c-.5-.1-1-.1-1.5-.1-6 0-10.9 4.9-10.9 10.9s4.9 10.9 10.9 10.9 10.9-4.9 10.9-10.9v-9c2.2 1.6 4.9 2.5 7.8 2.5v-5.9c-1.8 0-3.5-.6-4.7-1.7V13z" fill="#FE2C55"/><path d="M34.2 12.2c-1.8-1.2-3-3.2-3.3-5.5h-5.7v22c0 2.8-2.3 5-5 5s-5-2.3-5-5 2.3-5 5-5c.5 0 1 .1 1.5.2v-5.9c-.5-.1-1-.1-1.5-.1-6 0-10.9 4.9-10.9 10.9s4.9 10.9 10.9 10.9 10.9-4.9 10.9-10.9v-9c2.2 1.6 4.9 2.5 7.8 2.5v-5.9c-1.8 0-3.5-.6-4.7-1.7v-2.5z" fill="#FFF"/></svg>',
+      '店舗からのハガキ':'✉️','デジタルサイネージ':'📺',
+      'ネット広告':'<svg viewBox="0 0 64 30" width="56" height="26" xmlns="http://www.w3.org/2000/svg"><text x="0" y="13" font-family="Arial,sans-serif" font-size="12" font-weight="700" fill="#4285F4">G</text><text x="9" y="13" font-family="Arial,sans-serif" font-size="12" font-weight="700" fill="#EA4335">o</text><text x="18" y="13" font-family="Arial,sans-serif" font-size="12" font-weight="700" fill="#FBBC05">o</text><text x="27" y="13" font-family="Arial,sans-serif" font-size="12" font-weight="700" fill="#4285F4">g</text><text x="36" y="13" font-family="Arial,sans-serif" font-size="12" font-weight="700" fill="#34A853">l</text><text x="40" y="13" font-family="Arial,sans-serif" font-size="12" font-weight="700" fill="#EA4335">e</text><text x="0" y="27" font-family="Arial,sans-serif" font-size="11" font-weight="700" fill="#7B0099">Y</text><text x="8" y="27" font-family="Arial,sans-serif" font-size="11" font-weight="700" fill="#7B0099">a</text><text x="15" y="27" font-family="Arial,sans-serif" font-size="11" font-weight="700" fill="#7B0099">h</text><text x="22" y="27" font-family="Arial,sans-serif" font-size="11" font-weight="700" fill="#7B0099">o</text><text x="30" y="27" font-family="Arial,sans-serif" font-size="11" font-weight="700" fill="#7B0099">o</text><text x="38" y="27" font-family="Arial,sans-serif" font-size="11" font-weight="700" fill="#FF0033">!</text></svg>',
+      '看板':'🪧','家が近いから':'🏠','職場が近い':'🏢','隣接眼科紹介':'🏥',
+      'Facebook':'<svg viewBox="0 0 48 48" width="30" height="30" xmlns="http://www.w3.org/2000/svg"><rect width="48" height="48" rx="12" fill="#1877F2"/><path d="M29.5 25.5l.8-5.2h-5V17c0-1.4.7-2.8 2.9-2.8H31v-4.4s-2-.3-3.9-.3c-4 0-6.6 2.4-6.6 6.8v4h-4.4v5.2h4.4V38h5.4V25.5h4.1z" fill="#FFF"/></svg>',
+      '渡瀬マキSNS':'📣','その他':'❓'
+    };
+
+    // ============================================================
+    // 状態管理
+    // ============================================================
+    let selectedItems = new Set();
+    let formData = { product: '', gender: '', age: '', phone: '' };
+    let lineUser = { userId: '', displayName: '' };
+    let storeKey = '';
+    let storeName = '';
+
+    // ============================================================
+    // LIFF 初期化
+    // ============================================================
+    async function initLiff() {
+      try {
+        await liff.init({ liffId: LIFF_ID });
+
+        // ログインチェック
+        if (!liff.isLoggedIn()) {
+          liff.login();
+          return;
+        }
+
+        // LINEプロフィール取得
+        const profile = await liff.getProfile();
+        lineUser.userId = profile.userId;
+        lineUser.displayName = profile.displayName;
+
+        // URLパラメータから店舗取得
+        const params = new URLSearchParams(window.location.search);
+        // LIFF URLでは liff.state にパラメータが入る場合がある
+        const liffState = params.get('liff.state');
+        if (liffState) {
+          const stateParams = new URLSearchParams(liffState.replace(/^\?/, ''));
+          storeKey = stateParams.get('store') || 'shinjuku';
+        } else {
+          storeKey = params.get('store') || 'shinjuku';
+        }
+        storeName = STORES[storeKey] || '不明な店舗';
+
+        // UI初期化
+        buildPage1();
+        document.getElementById('lineNameDisplay').textContent = lineUser.displayName;
+        showScreen('page1Screen');
+
+      } catch (err) {
+        console.error('LIFF init error:', err);
+        document.getElementById('initScreen').innerHTML =
+          '<div style="text-align:center;padding:40px"><div style="font-size:48px;margin-bottom:16px">⚠️</div>' +
+          '<div style="font-size:16px;color:#8B7355">LINEの初期化に失敗しました</div>' +
+          '<div style="font-size:13px;color:#AAA;margin-top:8px">' + err.message + '</div></div>';
+      }
+    }
+
+    // ============================================================
+    // ページ1 構築
+    // ============================================================
+    function buildPage1() {
+      document.getElementById('storeNameDisplay').textContent = storeName;
+      document.getElementById('storeNameDisplay2').textContent = storeName;
+      const grid = document.getElementById('surveyGrid');
+      grid.innerHTML = '';
+      SURVEY_ITEMS.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'survey-item';
+        div.innerHTML =
+          '<div class="checkmark"><svg viewBox="0 0 24 24" fill="none" stroke="#C4944A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></div>' +
+          '<div class="icon">' + (ICONS[item]||'❓') + '</div>' +
+          '<div class="label">' + item + '</div>';
+        div.addEventListener('click', function() {
+          if (selectedItems.has(item)) { selectedItems.delete(item); div.classList.remove('selected'); }
+          else { selectedItems.add(item); div.classList.add('selected'); }
+          document.getElementById('toPage2Btn').disabled = selectedItems.size === 0;
+        });
+        grid.appendChild(div);
+      });
+    }
+
+    // ============================================================
+    // 画面遷移
+    // ============================================================
+    function showScreen(id) {
+      document.querySelectorAll('.screen').forEach(function(s) { s.classList.remove('active'); });
+      document.getElementById(id).classList.add('active');
+    }
+    function goToPage2() { if (selectedItems.size > 0) showScreen('page2Screen'); }
+    function goBackToPage1() { showScreen('page1Screen'); }
+
+    // ============================================================
+    // 単一選択
+    // ============================================================
+    function selectChoice(el) {
+      var group = el.getAttribute('data-group');
+      formData[group] = el.getAttribute('data-value');
+      document.querySelectorAll('[data-group="' + group + '"]').forEach(function(c) { c.classList.remove('selected'); });
+      el.classList.add('selected');
+      var err = document.getElementById(group + 'Error');
+      if (err) err.classList.remove('show');
+    }
+
+    // ============================================================
+    // 送信
+    // ============================================================
+    async function handleSubmit() {
+      var valid = true;
+      ['product','gender','age'].forEach(function(key) {
+        if (!formData[key]) {
+          document.getElementById(key + 'Error').classList.add('show');
+          valid = false;
+        }
+      });
+      if (!valid) {
+        var fe = document.querySelector('.validation-error.show');
+        if (fe) fe.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      formData.phone = document.getElementById('phoneInput').value.trim();
+      document.getElementById('loadingOverlay').classList.add('active');
+
+      var payload = {
+        action: 'submit',
+        data: {
+          storeKey: storeKey,
+          selectedItems: Array.from(selectedItems),
+          product: formData.product,
+          gender: formData.gender,
+          age: formData.age,
+          phone: formData.phone,
+          lineUserId: lineUser.userId,
+          lineDisplayName: lineUser.displayName
+        }
+      };
+
+      try {
+        var response = await fetch(GAS_API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify(payload)
+        });
+        var result = await response.json();
+
+        document.getElementById('loadingOverlay').classList.remove('active');
+
+        if (result.error) {
+          alert('送信エラー: ' + result.error);
+          return;
+        }
+
+        // 完了画面
+        var tags = document.getElementById('selectedTags');
+        tags.innerHTML = '';
+        selectedItems.forEach(function(item) {
+          var t = document.createElement('span'); t.className = 'selected-tag'; t.textContent = item; tags.appendChild(t);
+        });
+        document.getElementById('summaryInfo').innerHTML =
+          '<span>🛍️ ' + formData.product + '</span><span>👤 ' + formData.gender + '</span><span>📅 ' + formData.age + '</span>' +
+          (formData.phone ? '<span>📱 電話番号あり</span>' : '');
+        showScreen('thankYouScreen');
+
+      } catch (err) {
+        document.getElementById('loadingOverlay').classList.remove('active');
+        alert('通信エラーが発生しました。\n' + err.message);
+      }
+    }
+
+    // ============================================================
+    // LIFFを閉じる
+    // ============================================================
+    function closeLiff() {
+      if (liff.isInClient()) {
+        liff.closeWindow();
+      } else {
+        window.close();
+      }
+    }
+
+    // ============================================================
+    // 電話番号ハイフン自動挿入
+    // ============================================================
+    document.addEventListener('DOMContentLoaded', function() {
+      document.getElementById('phoneInput').addEventListener('input', function() {
+        var v = this.value.replace(/[^\d]/g, '');
+        if (v.length > 11) v = v.slice(0, 11);
+        if (v.length >= 8) this.value = v.slice(0,3)+'-'+v.slice(3,7)+'-'+v.slice(7);
+        else if (v.length >= 4) this.value = v.slice(0,3)+'-'+v.slice(3);
+        else this.value = v;
+      });
+    });
+
+    // ============================================================
+    // 起動
+    // ============================================================
+    initLiff();
+  </script>
+</body>
+</html>
